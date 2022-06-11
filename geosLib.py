@@ -318,7 +318,7 @@ def makeunicode(s: typing.Union[str, bytes], enc="utf-8", errors='ignore') -> st
     wrapper aound bytes.encode
     """
     if isinstance(s, bytes):
-        s = s.encode(encoding=enc, errors=errors)
+        s = s.decode(encoding=enc, errors=errors)
     return s
     # try:
     #     if type(s) != unicode:
@@ -1138,7 +1138,7 @@ class ItemCollector(object):
         sstart = "{\\fonttbl"
         send = "}"
         sitem = "\\f%i\\fnil\\fcharset0 %s;"
-        keys = self.fontIDName.keys()
+        keys = list(self.fontIDName.keys())
         keys.sort()
         items = [sstart]
         for key in keys:
@@ -1170,7 +1170,7 @@ def getGeoWriteStream(items: ItemCollector, chain: bytes, chains: list[bytes, tu
         if dist <= 2:
             # pdb.set_trace()
             pass
-        c = makeunicode(chain[j])
+        c = makeunicode(chain[j:j+1])
         nc = chain[j]
 
         if nc == 0:
@@ -1370,7 +1370,7 @@ def getGeoWriteStream(items: ItemCollector, chain: bytes, chains: list[bytes, tu
                 rtfFontID = items.getFontID(fontname)
                 items.addRTF("\\f%i " % (rtfFontID,))
                 font_id = fontid
-                font_name = fontname
+                # font_name = fontname
 
             if fontsize != font_size:
                 items.addHTML('<span style="font-size: %ipt">' % fontsize)
@@ -1461,7 +1461,7 @@ def convertWriteImage(vlir: VLIRFile, folder: str, flags=(1, 1), rtf=True, html=
         txt - if True write text document
     """
     # prepare
-    log = []
+    log = [] # type:list[str]
     basename = vlir.dirEntry.fileName
     writeversion = 21
     try:
@@ -1507,7 +1507,7 @@ def convertWriteImage(vlir: VLIRFile, folder: str, flags=(1, 1), rtf=True, html=
             os.makedirs(rtfoutfolder)
         rtfoutfile = os.path.join(rtfoutfolder, "TXT.rtf")
         if not os.path.exists(rtfoutfile):
-            with open(rtfoutfile, 'wb') as f:
+            with open(rtfoutfile, 'w') as f:
                 f.write(rtfs)
 
     if html:
@@ -1516,13 +1516,13 @@ def convertWriteImage(vlir: VLIRFile, folder: str, flags=(1, 1), rtf=True, html=
             os.makedirs(htmloutfolder)
         htmloutfile = os.path.join(htmloutfolder, "index.html")
         if not os.path.exists(htmloutfile):
-            with open(htmloutfile, 'wb') as f:
+            with open(htmloutfile, 'w') as f:
                 f.write(htmls)
 
     if txt:
         textoutfile = os.path.join(folder, basename + ".txt")
         if not os.path.exists(textoutfile):
-            with open(textoutfile, 'wb') as f:
+            with open(textoutfile, 'w') as f:
                 f.write(texts)
 
     # write images
@@ -1671,12 +1671,12 @@ class VLIRFile(object):
     self.dirEntry - The CBM/GEOS dirEntry.  A GEOSDirEntry
     """
     chains: list[typing.Union[bytes, tuple[int, int]]]
-    header: GEOSHeaderBlock
+    header: typing.Optional[GEOSHeaderBlock]
     dirEntry: GEOSDirEntry
 
     # Should probably move the VLIR creation code here?
 
-    def __init__(self, chains: list[typing.Union[bytes, tuple[int, int]]], header: GEOSHeaderBlock, dirEntry: GEOSDirEntry):
+    def __init__(self, chains: list[typing.Union[bytes, tuple[int, int]]], header: typing.Optional[GEOSHeaderBlock], dirEntry: GEOSDirEntry):
         self.chains = (chains + ([(0x00, 0xff)] * 127))[:127]  # Null fill
         self.header = header
         self.dirEntry = dirEntry
@@ -1721,7 +1721,7 @@ class GEOSHeaderBlock(object):
     author: str
     parentDisk: str
     creator: str
-    applicationData: bytes
+    applicationData: bytes # ? should be string?
     firstPagenumber: int
     NLQPrint: bool
     titlePage: bool
@@ -1772,7 +1772,7 @@ class GEOSHeaderBlock(object):
 
         # ok up to here
         self.loadAddress = s[69] + s[70] * 256
-        self.endOfLoadAddress = s[71] + s[72] * 256
+        self.endOfLoadAddress = s[71] + s[72] * 256 # ??
         self.startAddress = s[73] + s[74] * 256
 
         # self.classNameRAW = s[75:95]
@@ -1795,7 +1795,7 @@ class GEOSHeaderBlock(object):
             self.parentDisk = authorOrParentDisk
             self.creator = creator
 
-        self.applicationData = s[135:157]
+        self.applicationData = s[135:157] # ? convert to string?
 
         # geoWrite specific header data
         self.firstPagenumber = 1
@@ -1900,7 +1900,7 @@ class GEOSDirEntry(object):
     fileProtected: bool
     fileType: str
     trackSector: tuple[int, int]
-    filename: str
+    fileName: str
     geosHeaderTrackSector: tuple[int, int]
     geosHeaderTrackSector: tuple[int, int] = (0, 0)
     geosFileStructure: int = 0
@@ -1912,6 +1912,16 @@ class GEOSDirEntry(object):
     modfDateRAW: bytes = bytes(0x1c-0x17)
 
     def __init__(self, dirEntryBytes: bytes, isGeos=True):
+        
+        # Set some defaults in case isGeos is False
+        self.geosHeaderTrackSector = (0, 0)
+        self.geosFileStructure = 0
+        self.geosFileStructureString = ''
+        self.geosFileTypeString = ''
+        self.modfDate = 'NO MODF DATE'
+        self.isGEOSFile = False
+        self.geosFileType = 0
+        self.modfDateRAW = bytes(0x1c-0x17)
 
         if len(dirEntryBytes) == 32:
             dirEntryBytes = dirEntryBytes[2:]
@@ -2242,7 +2252,7 @@ class DiskImage(object):
                 isVLIR = dirEntry.geosFileStructureString == 'VLIR'
 
                 # f.header = ""
-                header = ''
+                header = None
                 if isGEOSFile:
                     err, s = self.getTS(dirEntry.geosHeaderTrackSector[0],
                                         dirEntry.geosHeaderTrackSector[1])

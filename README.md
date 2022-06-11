@@ -1,6 +1,6 @@
 ### geosLib
 
-
+MODIFIED TO SUPPORT PYTHON 3 (in progress)
 
 geosLib is a Python library to convert [GEOS](https://www.c64-wiki.de/index.php/GEOS) geoPaint, geoWrite, Photo Album and Photo Scrap files to modern formats.
 
